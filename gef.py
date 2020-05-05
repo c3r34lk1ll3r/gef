@@ -228,6 +228,20 @@ def highlight_text(text):
 def gef_print(x="", *args, **kwargs):
     """Wrapper around print(), using string buffering feature."""
     x = highlight_text(x)
+    pts_redirect = None
+    function = ""
+    for i in inspect.stack():
+        if "context" in i.function:
+            pts_redirect = GefTmuxSetup.pts_tmux[i.function]
+            function = i.function
+            break
+    if pts_redirect != None:
+        try:
+            pts_redirect.write(x + kwargs.get("end", "\n"))
+            if GefTmuxSetup.context_print == False:
+                return
+        except Exception:
+            GefTmuxSetup.pts_tmux[function] = None
     if __gef_int_stream_buffer__ and not is_debug():
         return __gef_int_stream_buffer__.write(x + kwargs.get("end", "\n"))
     return print(x, *args, **kwargs)
@@ -7156,7 +7170,6 @@ class ContextCommand(GenericCommand):
     _aliases_ = ["ctx",]
 
     old_registers = {}
-
     def __init__(self):
         super(ContextCommand, self).__init__()
         self.add_setting("enable", True, "Enable/disable printing the context when breaking")
@@ -7277,9 +7290,18 @@ class ContextCommand(GenericCommand):
         return
 
     def context_regs(self):
-        self.context_title("registers")
+        tmux_redirect = GefTmuxSetup.pts_tmux['context_regs']
+        if tmux_redirect != None:
+            try:
+                tmux_redirect.write("\033]2;Registers\033\\")
+                tmux_redirect.write("-"*50)
+                tmux_redirect.write("\x1b[H\x1b[J")
+            except Exception:
+                GefTmuxSetup.pts_tmux['context_regs'] = None
+                tmux_redirect = None
+        if tmux_redirect == None or GefTmuxSetup.context_print == True:
+            self.context_title("registers")
         ignored_registers = set(self.get_setting("ignore_registers").split())
-
         if self.get_setting("show_registers_raw") is False:
             regs = set(current_arch.all_registers)
             printable_registers = " ".join(list(regs - ignored_registers))
@@ -7346,8 +7368,17 @@ class ContextCommand(GenericCommand):
         return
 
     def context_stack(self):
-        self.context_title("stack")
-
+        tmux_redirect = GefTmuxSetup.pts_tmux['context_stack']
+        if tmux_redirect != None:
+            try:
+                tmux_redirect.write("\033]2;Stack\033\\")
+                tmux_redirect.write("-"*50)
+                tmux_redirect.write("\x1b[H\x1b[J")
+            except Exception:
+                GefTmuxSetup.pts_tmux['context_stack'] = None
+                tmux_redirect == None
+        if tmux_redirect == None or GefTmuxSetup.context_print == True:
+            self.context_title("stack")
         show_raw = self.get_setting("show_stack_raw")
         nb_lines = self.get_setting("nb_lines_stack")
 
@@ -7375,8 +7406,17 @@ class ContextCommand(GenericCommand):
         arch = frame.architecture()
         arch_name = "{}:{}".format(current_arch.arch.lower(), current_arch.mode)
 
-        self.context_title("code:{}".format(arch_name))
-
+        tmux_redirect = GefTmuxSetup.pts_tmux['context_code']
+        if tmux_redirect != None:
+            try:
+                tmux_redirect.write("\033]2;code:{}\033\\".format(arch_name))
+                tmux_redirect.write("-"*50)
+                tmux_redirect.write("\x1b[H\x1b[J")
+            except Exception:
+                GefTmuxSetup.pts_tmux['context_code'] = None
+                tmux_redirect == None
+        if tmux_redirect == None or GefTmuxSetup.context_print == True:
+            self.context_title("code:{}".format(arch_name))
         try:
             instruction_iterator = capstone_disassemble if use_capstone else gef_disassemble
 
@@ -7408,7 +7448,6 @@ class ContextCommand(GenericCommand):
 
                 else:
                     line += "   {}".format(text)
-
                 gef_print("".join(line))
 
                 if target:
@@ -7477,12 +7516,21 @@ class ContextCommand(GenericCommand):
             _type = f.type.name or self.size2type[f.type.sizeof]
             args.append("{} {} = {}".format(_type, _name, _value))
 
-        self.context_title("arguments")
+        tmux_redirect = GefTmuxSetup.pts_tmux['context_args']
+        if tmux_redirect != None:
+            try:
+                tmux_redirect.write("\033]2;Arguments\033\\")
+                tmux_redirect.write("-"*50)
+                tmux_redirect.write("\x1b[H\x1b[J")
+            except Exception:
+                GefTmuxSetup.pts_tmux['context_args'] = None
+                tmux_redirect == None
+        if tmux_redirect == None or GefTmuxSetup.context_print == True:
+            self.context_title("arguments")
 
         if not args:
             gef_print("{} (<void>)".format(function_name))
             return
-
         gef_print("{} (".format(function_name))
         gef_print("   " + ",\n   ".join(args))
         gef_print(")")
@@ -7544,8 +7592,17 @@ class ContextCommand(GenericCommand):
             _key, _value = current_arch.get_ith_parameter(i, in_func=False)
             _value = RIGHT_ARROW.join(DereferenceCommand.dereference_from(_value))
             args.append("{} = {}".format(Color.colorify(_key, arg_key_color), _value))
-
-        self.context_title("arguments (guessed)")
+        tmux_redirect = GefTmuxSetup.pts_tmux['context_args']
+        if tmux_redirect != None:
+            try:
+                tmux_redirect.write("\033]2;Arguments (guessed)\033\\")
+                tmux_redirect.write("-"*50)
+                tmux_redirect.write("\x1b[H\x1b[J")
+            except Exception:
+                GefTmuxSetup.pts_tmux['context_args'] = None
+                tmux_redirect == None
+        if tmux_redirect == None or GefTmuxSetup.context_print == True:
+            self.context_title("arguments (guessed)")
         gef_print("{} (".format(function_name))
         if args:
             gef_print("   "+",\n   ".join(args))
@@ -7575,8 +7632,17 @@ class ContextCommand(GenericCommand):
             fn = "{}[...]{}".format(fn[:15], os.path.splitext(fn)[1])
         title = "source:{}+{}".format(fn, line_num + 1)
         cur_line_color = get_gef_setting("theme.source_current_line")
-        self.context_title(title)
-
+        tmux_redirect = GefTmuxSetup.pts_tmux['context_source']
+        if tmux_redirect != None:
+            try:
+                tmux_redirect.write("\033]2;{}\033\\".format(title))
+                tmux_redirect.write("-"*50)
+                tmux_redirect.write("\x1b[H\x1b[J")
+            except Exception:
+                GefTmuxSetup.pts_tmux['context_source'] = None
+                tmux_redirect == None
+        if tmux_redirect == None or GefTmuxSetup.context_print == True:
+            self.context_title(title)
         for i in range(line_num - nb_line + 1, line_num + nb_line):
             if i < 0:
                 continue
@@ -7633,8 +7699,17 @@ class ContextCommand(GenericCommand):
         return ""
 
     def context_trace(self):
-        self.context_title("trace")
-
+        tmux_redirect = GefTmuxSetup.pts_tmux['context_trace']
+        if tmux_redirect != None:
+            try:
+                tmux_redirect.write("\033]2;Trace\033\\")
+                tmux_redirect.write("-"*50)
+                tmux_redirect.write("\x1b[H\x1b[J")
+            except Exception:
+                GefTmuxSetup.pts_tmux['context_trace'] = None
+                tmux_redirect = None
+        if tmux_redirect == None or GefTmuxSetup.context_print == True:
+            self.context_title("trace")
         nb_backtrace = self.get_setting("nb_lines_backtrace")
         if nb_backtrace <= 0:
             return
@@ -7700,8 +7775,17 @@ class ContextCommand(GenericCommand):
 
             return "STOPPED"
 
-        self.context_title("threads")
-
+        tmux_redirect = GefTmuxSetup.pts_tmux['context_threads']
+        if tmux_redirect != None:
+            try:
+                tmux_redirect.write("\033]2;Threads\033\\")
+                tmux_redirect.write("-"*50)
+                tmux_redirect.write("\x1b[H\x1b[J")
+            except Exception:
+                GefTmuxSetup.pts_tmux['context_threads']
+                tmux_redirect = None
+        if tmux_redirect == None or GefTmuxSetup.context_print == True:
+            self.context_title("threads")
         threads = gdb.selected_inferior().threads()[::-1]
         idx = self.get_setting("nb_lines_threads")
         if idx > 0:
@@ -9874,16 +9958,34 @@ class GefAliases(gdb.Command):
         return
 
 
-class GefTmuxSetup(gdb.Command):
+@register_command
+class GefTmuxSetup(GenericCommand):
     """Setup a confortable tmux debugging environment."""
+    _cmdline_ = "tmux-setup"
+    _syntax_ = _cmdline_
+    context_print = False
+    pts_tmux = {
+        "context_regs":  None,
+        "context_stack": None,
+        "context_code": None,
+        "context_args": None,
+        "context_memory": None,
+        "context_source": None,
+        "context_trace": None,
+        "context_threads": None,
+        "context_title" : None, # Dummy 
+        "context_additional_information": None, # Dummy?
+    }
     def __init__(self):
-        super(GefTmuxSetup, self).__init__("tmux-setup", gdb.COMMAND_NONE, gdb.COMPLETE_NONE)
+        super(GefTmuxSetup, self).__init__()
+        self.add_setting("layout", "default",  "Possible values are: default, current")
+        self.add_setting("sessions", ":", "Session name where spawn tmux context")
+        self.add_setting("context_print", False, "Print the context also in GDB pane")
         GefAlias("screen-setup", "tmux-setup")
         return
 
     def invoke(self, args, from_tty):
         self.dont_repeat()
-
         tmux = os.getenv("TMUX")
         if tmux:
             self.tmux_setup()
@@ -9903,17 +10005,86 @@ class GefTmuxSetup(gdb.Command):
         forcing the context to be redirected there."""
         tmux = which("tmux")
         ok("tmux session found, splitting window...")
-        old_ptses = set(os.listdir("/dev/pts"))
-        gdb.execute("! {} split-window -h 'clear ; cat'".format(tmux))
-        gdb.execute("! {} select-pane -L".format(tmux))
-        new_ptses = set(os.listdir("/dev/pts"))
-        pty = list(new_ptses - old_ptses)[0]
-        pty = "/dev/pts/{}".format(pty)
-        ok("Setting `context.redirect` to '{}'...".format(pty))
-        gdb.execute("gef config context.redirect {}".format(pty))
+        session = self.get_setting('sessions').split(' ')[0].split(':')
+        ## Now, we should check if the session already exists and the window. If not, we will create it
+        layout = self.get_setting("layout")
+        new_pane_id = ""
+        if layout == "default":
+            session_name = session[0]
+            window_name = session[1]
+            if session_name != "":
+                window_name = "GEF" if window_name == "" else window_name
+                datas = subprocess.check_output([tmux, 'list-sessions', '-F', '#{session_name}'])
+                datas = datas.decode("utf-8")
+                if session_name not in datas:
+                    gdb.execute("! {} new -s {} -n {} -d \'cat -\'".format(tmux, session_name, window_name))
+                    datas = subprocess.check_output([tmux, "list-panes", "-t",session_name+":"+window_name, '-F', '#{pane_id}'])
+                    datas = datas.decode('utf-8').strip()
+                    new_pane_id = datas
+
+            if new_pane_id == "" and window_name != "":
+                datas = subprocess.check_output([tmux, "list-window", '-t', session_name if session_name != "" else ":", '-F', '#{window_name}'])
+                datas = datas.decode("utf-8")
+                if window_name not in datas:
+                    gdb.execute("! {} new-window -n {} -t {}: \'cat -\'".format(tmux, window_name, session_name))
+                    datas = subprocess.check_output([tmux, "list-panes", "-t",session_name+":"+window_name, '-F', '#{pane_id}'])
+                    datas = datas.decode('utf-8').strip()
+                    new_pane_id = datas
+            # Set border
+            gdb.execute("! {} setw -t {}:{} pane-border-status top".format(tmux, session_name, window_name))
+            ## Default layout
+            gdb.execute("! {} split-window -h -t {}:{} -b -l 44% 'echo -ne \" \033]2;context_regs\033\\ \" ; cat -'".format(tmux, session_name, window_name))
+            gdb.execute("! {} split-window -v -t {}:{}.0 -l 55% 'echo -ne \" \033]2;context_stack\033\\ \" ; cat -'".format(tmux, session_name, window_name))
+            gdb.execute("! {} split-window -v -t {}:{}.1 -l 50% 'echo -ne \" \033]2;context_trace\033\\ \" ; cat -'".format(tmux, session_name, window_name))
+            gdb.execute("! {} split-window -v -t {}:{}.3 -b -l 60% 'echo -ne \" \033]2;context_code\033\\ \" ; cat -'".format(tmux, session_name, window_name))
+            gdb.execute("! {} split-window -v -t {}:{}.3 -l 10% 'echo -ne \" \033]2;context_threads\033\\ \" ; cat -'".format(tmux, session_name, window_name))
+            gdb.execute("! {} split-window -v -t {}:{}.3 -l 10% 'echo -ne \" \033]2;context_args\033\\ \" ; cat -'".format(tmux, session_name, window_name))
+            self.create_pts_mapping(session_name, window_name)
+        elif layout == "current":
+            ## We should also check the exists of the session and much more...
+            for x in self.get_setting('sessions').split(' '):
+                dx = x.split(":")
+                self.create_pts_mapping(dx[0], dx[1])
+        gdb.execute("! echo -ne \" \033]2;GDB\033\\ \"")
+
+        if new_pane_id != "":
+            gdb.execute("! {} kill-pane -t {}".format(tmux, new_pane_id))   
         ok("Done!")
         return
-
+    # Possible context are: Regs, stack, code, args, source, threads, trace, extra, memory
+    def create_pts_mapping(self, session_name, window_name):
+        tmux = which("tmux")
+        datas = subprocess.check_output([tmux, "list-panes", "-t", session_name+":"+window_name, "-F", "#{pane_title} #{pane_tty} #{pane_height}"])
+        datas = datas.decode('utf-8').split('\n')
+        pts = {}
+        for line in datas:
+            if line == "":
+                continue
+            l = line.split(' ')
+            if 'regs' in l[0].lower() or 'register' in l[0].lower():
+                l[0] = "context_regs"
+            elif 'stack' in l[0].lower():
+                l[0] = "context_stack"
+                rows = int(l[2])-4
+                gdb.execute("gef config context.nb_lines_stack "+str(rows))
+            elif 'code' in l[0].lower():
+                l[0] = "context_code"
+                rows = int(l[2])-4
+                gdb.execute("gef config context.nb_lines_code "+str(rows))
+            elif 'args' in l[0].lower():
+                l[0] = "context_args"
+            elif 'source' in l[0].lower():
+                l[0] = "context_source"
+            elif 'threads' in l[0].lower():
+                l[0] = "context_threads"
+            elif 'trace' in l[0].lower():
+                l[0] = "context_trace"
+            elif 'extra' in l[0].lower():
+                l[0] = "context_extra"
+            elif 'memory' in l[0].lower():
+                l[0] = "context_memory"
+            if 'context' in l[0]:
+                GefTmuxSetup.pts_tmux[l[0]] = open(l[1], 'wt')
 
     def screen_setup(self):
         """Hackish equivalent of the tmux_setup() function for screen."""
